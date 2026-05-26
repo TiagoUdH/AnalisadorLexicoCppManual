@@ -8,26 +8,65 @@
 namespace {
 
 // ---------------------------------------------------------------------------
+// Textos e identidade visual da janela
+// ---------------------------------------------------------------------------
+const char* APP_TITLE = "GachaScript Lexer // Manual C++";
+const char* APP_SUBTITLE = "Scanner manual: Start, Farmar, Drop e 50/50 reconhecidos caractere a caractere.";
+const char* WINDOW_CLASS_NAME = "AnalisadorLexicoManualCppWindow";
+const char* WINDOW_TITLE = "GachaScript Lexer Manual - C++";
+const char* ANALYZE_BUTTON_TEXT = "Farmar tokens";
+
+// ---------------------------------------------------------------------------
 // Identificadores dos controles Win32
 // ---------------------------------------------------------------------------
-constexpr int ID_EDITOR  = 1001; // Caixa de texto do codigo-fonte (editavel)
-constexpr int ID_OUTPUT  = 1002; // Caixa de texto da saida (somente leitura)
-constexpr int ID_OPEN    = 1003; // Botao Abrir
-constexpr int ID_ANALYZE = 1004; // Botao Analisar
-constexpr int ID_SAMPLE  = 1005; // Botao Exemplo
-constexpr int ID_CLEAR   = 1006; // Botao Limpar
-constexpr int ID_SAVE    = 1007; // Botao Salvar saida
+constexpr int ID_EDITOR   = 1001; // Caixa de texto do codigo-fonte (editavel)
+constexpr int ID_OUTPUT   = 1002; // Caixa de texto da saida (somente leitura)
+constexpr int ID_OPEN     = 1003; // Botao Abrir
+constexpr int ID_ANALYZE  = 1004; // Botao Analisar
+constexpr int ID_SAMPLE   = 1005; // Botao Exemplo
+constexpr int ID_CLEAR    = 1006; // Botao Limpar
+constexpr int ID_SAVE     = 1007; // Botao Salvar saida
+constexpr int ID_TITLE    = 1008; // Titulo da tela
+constexpr int ID_SUBTITLE = 1009; // Subtitulo da tela
+
+// ---------------------------------------------------------------------------
+// Paleta inspirada em uma interface de jogo/gacha: fundo escuro, dourado de
+// drop raro, verde de sucesso e vermelho para erros lexicos.
+// ---------------------------------------------------------------------------
+const COLORREF THEME_BACKGROUND = RGB(13, 16, 30);
+const COLORREF COLOR_PANEL = RGB(22, 27, 46);
+const COLORREF COLOR_EDITOR = RGB(9, 12, 24);
+const COLORREF COLOR_OUTPUT = RGB(14, 20, 33);
+const COLORREF COLOR_STATUS = RGB(18, 24, 39);
+const COLORREF COLOR_TEXT = RGB(232, 238, 247);
+const COLORREF COLOR_MUTED = RGB(151, 164, 185);
+const COLORREF COLOR_GOLD = RGB(255, 202, 92);
+const COLORREF COLOR_GOLD_DARK = RGB(168, 116, 38);
+const COLORREF COLOR_GREEN = RGB(78, 201, 115);
+const COLORREF COLOR_RED = RGB(239, 96, 96);
+const COLORREF COLOR_BUTTON = RGB(36, 45, 74);
+const COLORREF COLOR_BUTTON_HOT = RGB(48, 61, 100);
+const COLORREF COLOR_BUTTON_DOWN = RGB(30, 38, 63);
 
 // ---------------------------------------------------------------------------
 // Handles globais dos controles criados em createControls()
 // ---------------------------------------------------------------------------
-HWND gEditor      = nullptr; // Area de edicao do codigo-fonte
-HWND gOutput      = nullptr; // Area de saida dos tokens/erros
-HWND gStatus      = nullptr; // Barra de status na parte inferior
-HWND gEditorLabel = nullptr; // Rotulo acima do editor
-HWND gOutputLabel = nullptr; // Rotulo acima da saida
-HFONT gUiFont     = nullptr; // Fonte proporcional para botoes e rotulos
-HFONT gMonoFont   = nullptr; // Fonte monoespaco para editor e saida
+HWND gHeaderTitle = nullptr;    // Titulo visual da aplicacao
+HWND gHeaderSubtitle = nullptr; // Subtitulo visual da aplicacao
+HWND gEditor = nullptr;         // Area de edicao do codigo-fonte
+HWND gOutput = nullptr;         // Area de saida dos tokens/erros
+HWND gStatus = nullptr;         // Barra de status na parte inferior
+HWND gEditorLabel = nullptr;    // Rotulo acima do editor
+HWND gOutputLabel = nullptr;    // Rotulo acima da saida
+HFONT gTitleFont = nullptr;     // Fonte do titulo
+HFONT gUiFont = nullptr;        // Fonte proporcional para botoes e rotulos
+HFONT gSmallFont = nullptr;     // Fonte do subtitulo e status
+HFONT gMonoFont = nullptr;      // Fonte monoespaco para editor e saida
+HBRUSH gBackgroundBrush = nullptr;
+HBRUSH gPanelBrush = nullptr;
+HBRUSH gEditorBrush = nullptr;
+HBRUSH gOutputBrush = nullptr;
+HBRUSH gStatusBrush = nullptr;
 
 const char* SAMPLE_CODE =
     "Start {\r\n"
@@ -60,6 +99,44 @@ const char* SAMPLE_CODE =
     "char_ruim = 'a\r\n"
     "@\r\n"
     "/* comentario sem fechamento";
+
+void deleteBrush(HBRUSH& brush) {
+    if (brush != nullptr) {
+        DeleteObject(brush);
+        brush = nullptr;
+    }
+}
+
+void deleteFont(HFONT& font) {
+    if (font != nullptr) {
+        DeleteObject(font);
+        font = nullptr;
+    }
+}
+
+// Cria recursos GDI usados no tema escuro.
+void createThemeResources() {
+    if (gBackgroundBrush == nullptr) {
+        gBackgroundBrush = CreateSolidBrush(THEME_BACKGROUND);
+        gPanelBrush = CreateSolidBrush(COLOR_PANEL);
+        gEditorBrush = CreateSolidBrush(COLOR_EDITOR);
+        gOutputBrush = CreateSolidBrush(COLOR_OUTPUT);
+        gStatusBrush = CreateSolidBrush(COLOR_STATUS);
+    }
+}
+
+// Libera fontes e pinceis GDI antes de encerrar a janela.
+void destroyThemeResources() {
+    deleteFont(gTitleFont);
+    deleteFont(gUiFont);
+    deleteFont(gSmallFont);
+    deleteFont(gMonoFont);
+    deleteBrush(gBackgroundBrush);
+    deleteBrush(gPanelBrush);
+    deleteBrush(gEditorBrush);
+    deleteBrush(gOutputBrush);
+    deleteBrush(gStatusBrush);
+}
 
 // Converte quebras de linha Unix (\n) para Windows (\r\n) antes de exibir no controle EDIT.
 std::string toWindowsNewlines(const std::string& text) {
@@ -104,7 +181,7 @@ void setStatus(const std::string& text) {
 
 // Exibe uma caixa de mensagem de erro modal.
 void showError(HWND owner, const std::string& message) {
-    MessageBoxA(owner, message.c_str(), "Analisador Lexico", MB_ICONERROR | MB_OK);
+    MessageBoxA(owner, message.c_str(), "GachaScript Lexer", MB_ICONERROR | MB_OK);
 }
 
 // Le o codigo-fonte do editor, executa o analisador lexico e exibe o resultado.
@@ -114,7 +191,7 @@ void analyzeSource(HWND owner) {
         const LexicalResult result = lexer.analyze();
         setControlText(gOutput, Lexer::formatResult(result));
 
-        setStatus("Analise concluida: " + std::to_string(result.tokens.size()) +
+        setStatus("Drop concluido: " + std::to_string(result.tokens.size()) +
                   " token(s), " + std::to_string(result.errors.size()) + " erro(s).");
     } catch (const std::exception& exception) {
         showError(owner, exception.what());
@@ -136,7 +213,7 @@ void openFile(HWND owner) {
     if (GetOpenFileNameA(&options)) {
         try {
             setControlText(gEditor, readTextFile(fileName));
-            setStatus(std::string("Arquivo carregado: ") + fileName);
+            setStatus(std::string("Script carregado: ") + fileName);
         } catch (const std::exception& exception) {
             showError(owner, exception.what());
         }
@@ -145,7 +222,7 @@ void openFile(HWND owner) {
 
 // Abre um dialogo de salvar e grava o conteudo da area de saida em arquivo .txt.
 void saveOutput(HWND owner) {
-    char fileName[MAX_PATH] = "saida_lexica.txt";
+    char fileName[MAX_PATH] = "drop_lexico.txt";
     OPENFILENAMEA options = {};
     options.lStructSize = sizeof(options);
     options.hwndOwner = owner;
@@ -159,10 +236,66 @@ void saveOutput(HWND owner) {
     if (GetSaveFileNameA(&options)) {
         try {
             writeTextFile(fileName, getControlText(gOutput));
-            setStatus(std::string("Saida salva em: ") + fileName);
+            setStatus(std::string("Drop salvo em: ") + fileName);
         } catch (const std::exception& exception) {
             showError(owner, exception.what());
         }
+    }
+}
+
+void fillRectWithColor(HDC deviceContext, const RECT& area, COLORREF color) {
+    HBRUSH brush = CreateSolidBrush(color);
+    FillRect(deviceContext, &area, brush);
+    DeleteObject(brush);
+}
+
+// Desenha botoes em estilo escuro/dourado em vez do botao padrao do Windows.
+void drawThemedButton(const DRAWITEMSTRUCT* item) {
+    const bool pressed = (item->itemState & ODS_SELECTED) != 0;
+    const bool focused = (item->itemState & ODS_FOCUS) != 0;
+    const bool primary = item->CtlID == ID_ANALYZE;
+    const bool danger = item->CtlID == ID_CLEAR;
+
+    RECT rect = item->rcItem;
+    COLORREF fill = pressed ? COLOR_BUTTON_DOWN : COLOR_BUTTON;
+    COLORREF border = COLOR_GOLD_DARK;
+    COLORREF text = COLOR_TEXT;
+
+    if (primary) {
+        fill = pressed ? COLOR_GOLD_DARK : COLOR_GOLD;
+        border = COLOR_GOLD;
+        text = RGB(18, 20, 30);
+    } else if (danger) {
+        border = COLOR_RED;
+    } else if ((item->itemState & ODS_HOTLIGHT) != 0) {
+        fill = COLOR_BUTTON_HOT;
+    }
+
+    fillRectWithColor(item->hDC, rect, fill);
+
+    HPEN borderPen = CreatePen(PS_SOLID, 1, border);
+    HGDIOBJ previousPen = SelectObject(item->hDC, borderPen);
+    HGDIOBJ previousBrush = SelectObject(item->hDC, GetStockObject(NULL_BRUSH));
+    Rectangle(item->hDC, rect.left, rect.top, rect.right, rect.bottom);
+    SelectObject(item->hDC, previousBrush);
+    SelectObject(item->hDC, previousPen);
+    DeleteObject(borderPen);
+
+    char label[80] = "";
+    GetWindowTextA(item->hwndItem, label, sizeof(label));
+    if (pressed) {
+        OffsetRect(&rect, 1, 1);
+    }
+
+    SetBkMode(item->hDC, TRANSPARENT);
+    SetTextColor(item->hDC, text);
+    HGDIOBJ previousFont = SelectObject(item->hDC, gUiFont);
+    DrawTextA(item->hDC, label, -1, &rect, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    SelectObject(item->hDC, previousFont);
+
+    if (focused) {
+        InflateRect(&rect, -4, -4);
+        DrawFocusRect(item->hDC, &rect);
     }
 }
 
@@ -173,61 +306,80 @@ void layoutControls(HWND window) {
 
     const int width = area.right - area.left;
     const int height = area.bottom - area.top;
-    const int margin = 14;
-    const int toolbarHeight = 38;
-    const int labelHeight = 24;
-    const int statusHeight = 26;
-    const int gap = 12;
-    const int buttonWidth = 96;
-    const int buttonHeight = 28;
-    const int top = margin;
+    const int margin = 18;
+    const int headerTop = 12;
+    const int titleHeight = 32;
+    const int subtitleHeight = 24;
+    const int toolbarTop = headerTop + titleHeight + subtitleHeight + 14;
+    const int toolbarHeight = 34;
+    const int labelHeight = 26;
+    const int statusHeight = 30;
+    const int gap = 14;
+    const int buttonHeight = 30;
+
+    MoveWindow(gHeaderTitle, margin, headerTop, width - (2 * margin), titleHeight, TRUE);
+    MoveWindow(gHeaderSubtitle, margin, headerTop + titleHeight, width - (2 * margin), subtitleHeight, TRUE);
 
     int buttonLeft = margin;
-    MoveWindow(GetDlgItem(window, ID_OPEN), buttonLeft, top, buttonWidth, buttonHeight, TRUE);
-    buttonLeft += buttonWidth + 8;
-    MoveWindow(GetDlgItem(window, ID_ANALYZE), buttonLeft, top, buttonWidth, buttonHeight, TRUE);
-    buttonLeft += buttonWidth + 8;
-    MoveWindow(GetDlgItem(window, ID_SAMPLE), buttonLeft, top, buttonWidth, buttonHeight, TRUE);
-    buttonLeft += buttonWidth + 8;
-    MoveWindow(GetDlgItem(window, ID_CLEAR), buttonLeft, top, buttonWidth, buttonHeight, TRUE);
-    buttonLeft += buttonWidth + 8;
-    MoveWindow(GetDlgItem(window, ID_SAVE), buttonLeft, top, buttonWidth + 18, buttonHeight, TRUE);
+    MoveWindow(GetDlgItem(window, ID_OPEN), buttonLeft, toolbarTop, 112, buttonHeight, TRUE);
+    buttonLeft += 120;
+    MoveWindow(GetDlgItem(window, ID_ANALYZE), buttonLeft, toolbarTop, 136, buttonHeight, TRUE);
+    buttonLeft += 144;
+    MoveWindow(GetDlgItem(window, ID_SAMPLE), buttonLeft, toolbarTop, 126, buttonHeight, TRUE);
+    buttonLeft += 134;
+    MoveWindow(GetDlgItem(window, ID_CLEAR), buttonLeft, toolbarTop, 92, buttonHeight, TRUE);
+    buttonLeft += 100;
+    MoveWindow(GetDlgItem(window, ID_SAVE), buttonLeft, toolbarTop, 122, buttonHeight, TRUE);
 
-    const int contentTop = margin + toolbarHeight + labelHeight;
+    const int labelsTop = toolbarTop + toolbarHeight + 12;
+    const int contentTop = labelsTop + labelHeight;
     const int contentHeight = height - contentTop - statusHeight - margin;
     const int paneWidth = (width - (2 * margin) - gap) / 2;
 
-    MoveWindow(gEditorLabel, margin, margin + toolbarHeight, paneWidth, labelHeight, TRUE);
-    MoveWindow(gOutputLabel, margin + paneWidth + gap, margin + toolbarHeight, paneWidth, labelHeight, TRUE);
+    MoveWindow(gEditorLabel, margin, labelsTop, paneWidth, labelHeight, TRUE);
+    MoveWindow(gOutputLabel, margin + paneWidth + gap, labelsTop, paneWidth, labelHeight, TRUE);
 
     MoveWindow(gEditor, margin, contentTop, paneWidth, contentHeight, TRUE);
     MoveWindow(gOutput, margin + paneWidth + gap, contentTop, paneWidth, contentHeight, TRUE);
-    MoveWindow(gStatus, margin, height - statusHeight - 4, width - (2 * margin), statusHeight, TRUE);
+    MoveWindow(gStatus, margin, height - statusHeight - 6, width - (2 * margin), statusHeight, TRUE);
 }
 
 // Cria todos os controles da janela (botoes, areas de texto, rotulos, fontes).
 void createControls(HWND window, HINSTANCE instance) {
-    gUiFont = CreateFontA(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+    createThemeResources();
+
+    gTitleFont = CreateFontA(-26, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                             DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+    gUiFont = CreateFontA(-16, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                           DEFAULT_PITCH | FF_SWISS, "Segoe UI");
+    gSmallFont = CreateFontA(-14, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+                             DEFAULT_PITCH | FF_SWISS, "Segoe UI");
     gMonoFont = CreateFontA(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
                             FIXED_PITCH | FF_MODERN, "Consolas");
 
-    CreateWindowExA(0, "BUTTON", "Abrir", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    gHeaderTitle = CreateWindowExA(0, "STATIC", APP_TITLE, WS_CHILD | WS_VISIBLE,
+                                   0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_TITLE), instance, nullptr);
+    gHeaderSubtitle = CreateWindowExA(0, "STATIC", APP_SUBTITLE, WS_CHILD | WS_VISIBLE,
+                                      0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_SUBTITLE), instance, nullptr);
+
+    CreateWindowExA(0, "BUTTON", "Abrir .gs", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                     0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_OPEN), instance, nullptr);
-    CreateWindowExA(0, "BUTTON", "Analisar", WS_CHILD | WS_VISIBLE | BS_DEFPUSHBUTTON,
+    CreateWindowExA(0, "BUTTON", ANALYZE_BUTTON_TEXT, WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                     0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_ANALYZE), instance, nullptr);
-    CreateWindowExA(0, "BUTTON", "Exemplo", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    CreateWindowExA(0, "BUTTON", "Carregar demo", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                     0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_SAMPLE), instance, nullptr);
-    CreateWindowExA(0, "BUTTON", "Limpar", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    CreateWindowExA(0, "BUTTON", "Limpar", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                     0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_CLEAR), instance, nullptr);
-    CreateWindowExA(0, "BUTTON", "Salvar saida", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+    CreateWindowExA(0, "BUTTON", "Salvar drop", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                     0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_SAVE), instance, nullptr);
 
-    gEditorLabel = CreateWindowExA(0, "STATIC", "Codigo-fonte", WS_CHILD | WS_VISIBLE,
+    gEditorLabel = CreateWindowExA(0, "STATIC", "Script .gs", WS_CHILD | WS_VISIBLE,
                                    0, 0, 0, 0, window, nullptr, instance, nullptr);
-    gOutputLabel = CreateWindowExA(0, "STATIC", "Tokens e erros", WS_CHILD | WS_VISIBLE,
+    gOutputLabel = CreateWindowExA(0, "STATIC", "Tokens, drops e erros", WS_CHILD | WS_VISIBLE,
                                    0, 0, 0, 0, window, nullptr, instance, nullptr);
 
     gEditor = CreateWindowExA(WS_EX_CLIENTEDGE, "EDIT", "",
@@ -240,14 +392,18 @@ void createControls(HWND window, HINSTANCE instance) {
                                   ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
                               0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_OUTPUT), instance, nullptr);
 
-    gStatus = CreateWindowExA(0, "STATIC", "Pronto.", WS_CHILD | WS_VISIBLE,
+    gStatus = CreateWindowExA(0, "STATIC", "Pronto para analisar GachaScript.", WS_CHILD | WS_VISIBLE,
                               0, 0, 0, 0, window, nullptr, instance, nullptr);
 
+    SendMessageA(gHeaderTitle, WM_SETFONT, reinterpret_cast<WPARAM>(gTitleFont), TRUE);
+    SendMessageA(gHeaderSubtitle, WM_SETFONT, reinterpret_cast<WPARAM>(gSmallFont), TRUE);
     SendMessageA(gEditor, WM_SETFONT, reinterpret_cast<WPARAM>(gMonoFont), TRUE);
     SendMessageA(gOutput, WM_SETFONT, reinterpret_cast<WPARAM>(gMonoFont), TRUE);
     SendMessageA(gEditorLabel, WM_SETFONT, reinterpret_cast<WPARAM>(gUiFont), TRUE);
     SendMessageA(gOutputLabel, WM_SETFONT, reinterpret_cast<WPARAM>(gUiFont), TRUE);
-    SendMessageA(gStatus, WM_SETFONT, reinterpret_cast<WPARAM>(gUiFont), TRUE);
+    SendMessageA(gStatus, WM_SETFONT, reinterpret_cast<WPARAM>(gSmallFont), TRUE);
+    SendMessageA(gEditor, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
+    SendMessageA(gOutput, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
 
     for (int id : {ID_OPEN, ID_ANALYZE, ID_SAMPLE, ID_CLEAR, ID_SAVE}) {
         SendMessageA(GetDlgItem(window, id), WM_SETFONT, reinterpret_cast<WPARAM>(gUiFont), TRUE);
@@ -256,7 +412,56 @@ void createControls(HWND window, HINSTANCE instance) {
     setControlText(gEditor, SAMPLE_CODE);
 }
 
-// Procedimento de janela: trata mensagens WM_CREATE, WM_SIZE, WM_COMMAND e WM_DESTROY.
+HBRUSH colorStaticControl(HDC deviceContext, HWND control) {
+    SetBkMode(deviceContext, TRANSPARENT);
+
+    if (control == gHeaderTitle) {
+        SetTextColor(deviceContext, COLOR_GOLD);
+        return gBackgroundBrush;
+    }
+    if (control == gHeaderSubtitle) {
+        SetTextColor(deviceContext, COLOR_MUTED);
+        return gBackgroundBrush;
+    }
+    if (control == gEditorLabel) {
+        SetTextColor(deviceContext, COLOR_GREEN);
+        return gBackgroundBrush;
+    }
+    if (control == gOutputLabel) {
+        SetTextColor(deviceContext, COLOR_GOLD);
+        return gBackgroundBrush;
+    }
+    if (control == gStatus) {
+        SetTextColor(deviceContext, COLOR_MUTED);
+        SetBkColor(deviceContext, COLOR_STATUS);
+        return gStatusBrush;
+    }
+    if (control == gOutput) {
+        SetBkMode(deviceContext, OPAQUE);
+        SetTextColor(deviceContext, COLOR_TEXT);
+        SetBkColor(deviceContext, COLOR_OUTPUT);
+        return gOutputBrush;
+    }
+
+    SetTextColor(deviceContext, COLOR_TEXT);
+    return gBackgroundBrush;
+}
+
+HBRUSH colorEditControl(HDC deviceContext, HWND control) {
+    SetBkMode(deviceContext, OPAQUE);
+
+    if (control == gEditor) {
+        SetTextColor(deviceContext, COLOR_TEXT);
+        SetBkColor(deviceContext, COLOR_EDITOR);
+        return gEditorBrush;
+    }
+
+    SetTextColor(deviceContext, COLOR_TEXT);
+    SetBkColor(deviceContext, COLOR_OUTPUT);
+    return gOutputBrush;
+}
+
+// Procedimento de janela: trata mensagens de criacao, layout, pintura e comandos.
 LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         case WM_CREATE:
@@ -265,7 +470,26 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
             return 0;
         case WM_SIZE:
             layoutControls(window);
+            InvalidateRect(window, nullptr, TRUE);
             return 0;
+        case WM_ERASEBKGND: {
+            RECT area;
+            GetClientRect(window, &area);
+            fillRectWithColor(reinterpret_cast<HDC>(wParam), area, THEME_BACKGROUND);
+            return 1;
+        }
+        case WM_CTLCOLORSTATIC:
+            return reinterpret_cast<INT_PTR>(colorStaticControl(reinterpret_cast<HDC>(wParam),
+                                                               reinterpret_cast<HWND>(lParam)));
+        case WM_CTLCOLOREDIT:
+            return reinterpret_cast<INT_PTR>(colorEditControl(reinterpret_cast<HDC>(wParam),
+                                                             reinterpret_cast<HWND>(lParam)));
+        case WM_CTLCOLORBTN:
+            SetBkColor(reinterpret_cast<HDC>(wParam), THEME_BACKGROUND);
+            return reinterpret_cast<INT_PTR>(gPanelBrush);
+        case WM_DRAWITEM:
+            drawThemedButton(reinterpret_cast<DRAWITEMSTRUCT*>(lParam));
+            return TRUE;
         case WM_COMMAND:
             switch (LOWORD(wParam)) {
                 case ID_OPEN:
@@ -277,12 +501,12 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
                 case ID_SAMPLE:
                     setControlText(gEditor, SAMPLE_CODE);
                     SetWindowTextA(gOutput, "");
-                    setStatus("Exemplo carregado.");
+                    setStatus("Demo GachaScript carregada.");
                     return 0;
                 case ID_CLEAR:
                     SetWindowTextA(gEditor, "");
                     SetWindowTextA(gOutput, "");
-                    setStatus("Editor limpo.");
+                    setStatus("Editor limpo. Pronto para novo script.");
                     return 0;
                 case ID_SAVE:
                     saveOutput(window);
@@ -292,12 +516,7 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
             }
             break;
         case WM_DESTROY:
-            if (gUiFont != nullptr) {
-                DeleteObject(gUiFont);
-            }
-            if (gMonoFont != nullptr) {
-                DeleteObject(gMonoFont);
-            }
+            destroyThemeResources();
             PostQuitMessage(0);
             return 0;
         default:
@@ -310,26 +529,28 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
 }  // namespace
 
 int WINAPI WinMain(HINSTANCE instance, HINSTANCE, LPSTR, int showCommand) {
-    const char* className = "AnalisadorLexicoManualCppWindow";
+    createThemeResources();
 
     WNDCLASSA windowClass = {};
     windowClass.lpfnWndProc = windowProcedure;
     windowClass.hInstance = instance;
-    windowClass.lpszClassName = className;
+    windowClass.lpszClassName = WINDOW_CLASS_NAME;
     windowClass.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    windowClass.hbrBackground = gBackgroundBrush;
 
     if (!RegisterClassA(&windowClass)) {
-        MessageBoxA(nullptr, "Nao foi possivel registrar a janela.", "Analisador Lexico", MB_ICONERROR | MB_OK);
+        MessageBoxA(nullptr, "Nao foi possivel registrar a janela.", "GachaScript Lexer", MB_ICONERROR | MB_OK);
+        destroyThemeResources();
         return 1;
     }
 
-    HWND window = CreateWindowExA(0, className, "Analisador Lexico Manual - C++",
+    HWND window = CreateWindowExA(0, WINDOW_CLASS_NAME, WINDOW_TITLE,
                                   WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-                                  1120, 720, nullptr, nullptr, instance, nullptr);
+                                  1180, 760, nullptr, nullptr, instance, nullptr);
 
     if (window == nullptr) {
-        MessageBoxA(nullptr, "Nao foi possivel criar a janela.", "Analisador Lexico", MB_ICONERROR | MB_OK);
+        MessageBoxA(nullptr, "Nao foi possivel criar a janela.", "GachaScript Lexer", MB_ICONERROR | MB_OK);
+        destroyThemeResources();
         return 1;
     }
 
