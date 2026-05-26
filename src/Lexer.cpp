@@ -5,13 +5,19 @@
 #include <stdexcept>
 #include <utility>
 
+// ---------------------------------------------------------------------------
+// Funcoes auxiliares internas — visibilidade restrita a este arquivo.
+// ---------------------------------------------------------------------------
 namespace {
 
+// Retorna true se o caractere pode compor uma palavra (letra, digito ou _).
+// Usado para verificar se o proximo caractere apos "50/50" termina o lexema.
 bool isWordCharacter(char value) {
     return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
            (value >= '0' && value <= '9') || value == '_';
 }
 
+// Remove o prefixo '~' de variaveis do tipo ~Tipo_Var (ex.: ~Level -> Level).
 std::string removeTypePrefix(const std::string& lexeme) {
     if (!lexeme.empty() && lexeme[0] == '~') {
         return lexeme.substr(1);
@@ -20,11 +26,14 @@ std::string removeTypePrefix(const std::string& lexeme) {
     return lexeme;
 }
 
+// Retorna true se a string e um dos tipos de variavel da linguagem.
 bool isTypeKeyword(const std::string& value) {
     return value == "Level" || value == "T4" || value == "T5" ||
            value == "Meta" || value == "Lore" || value == "Assinatura";
 }
 
+// Retorna o tipo de token reservado correspondente ao lexema, ou "" se for
+// um identificador comum. Tambem rejeita ~palavra sem tipo valido (retorna "").
 std::string reservedTokenType(const std::string& lexeme) {
     const std::string value = removeTypePrefix(lexeme);
 
@@ -70,14 +79,20 @@ std::string reservedTokenType(const std::string& lexeme) {
 
 }  // namespace
 
+// ---------------------------------------------------------------------------
+// Implementacao da classe Lexer
+// ---------------------------------------------------------------------------
+
 Lexer::Lexer(std::string sourceCode)
     : source(std::move(sourceCode)), position(0), line(1), column(1) {
 }
 
+// Varre o codigo-fonte inteiro e preenche result com tokens e erros.
 LexicalResult Lexer::analyze() {
     LexicalResult result;
 
     while (!isAtEnd()) {
+        // Pula espacos em branco e comentarios antes de tentar reconhecer o proximo token
         skipIgnored(result);
 
         if (isAtEnd()) {
@@ -86,6 +101,8 @@ LexicalResult Lexer::analyze() {
 
         const char current = peek();
 
+        // Caso especial: "50/50" e uma palavra reservada (Cond_if),
+        // mas contem '/' que normalmente seria operador — precisa ser testado antes.
         if (source.compare(position, 5, "50/50") == 0 && !isWordCharacter(peek(5))) {
             const int startLine = line;
             const int startColumn = column;
@@ -94,6 +111,7 @@ LexicalResult Lexer::analyze() {
                 lexeme += advance();
             }
             result.tokens.push_back({"Cond_if", lexeme, startLine, startColumn});
+        // Prefixo '~' seguido de letra indica variavel com tipo (~Level, ~T4 ...).
         } else if (current == '~' && isIdentifierStart(peek(1))) {
             scanIdentifier(result);
         } else if (isIdentifierStart(current)) {
@@ -215,39 +233,49 @@ bool Lexer::isDelimiter(char value) {
            value == '(' || value == ')' || value == '[' || value == ']';
 }
 
+// Avanca sobre todo conteudo ignoravel: espacos em branco, comentarios de linha
+// (//) e comentarios de bloco (/* */). O loop repete enquanto houver algo a consumir,
+// pois comentarios e espacos podem se alternar.
 void Lexer::skipIgnored(LexicalResult& result) {
     bool consumed;
 
     do {
         consumed = false;
 
+        // Pula espacos em branco (espaco, tab, \n, \r, etc.)
         while (!isAtEnd() && isWhitespace(peek())) {
             advance();
             consumed = true;
         }
 
         if (!isAtEnd() && peek() == '/' && peek(1) == '/') {
+            // Comentario de linha: descarta tudo ate o fim da linha
             while (!isAtEnd() && peek() != '\n' && peek() != '\r') {
                 advance();
             }
             consumed = true;
         } else if (!isAtEnd() && peek() == '/' && peek(1) == '*') {
+            // Comentario de bloco: delega a consumeComment (pode registrar erro)
             consumeComment(result);
             consumed = true;
         }
     } while (consumed && !isAtEnd());
 }
 
+// Consome um comentario de bloco /* ... */.
+// Se o fim do arquivo for atingido sem encontrar "*/", registra um erro lexico.
 void Lexer::consumeComment(LexicalResult& result) {
     const int startLine = line;
     const int startColumn = column;
     std::string lexeme;
 
+    // Consome os dois caracteres de abertura "/*"
     lexeme += advance();
     lexeme += advance();
 
     while (!isAtEnd()) {
         if (peek() == '*' && peek(1) == '/') {
+            // Encontrou o fechamento "*/"
             lexeme += advance();
             lexeme += advance();
             return;
@@ -256,6 +284,7 @@ void Lexer::consumeComment(LexicalResult& result) {
         lexeme += advance();
     }
 
+    // Chegou ao fim do arquivo sem fechar o comentario
     result.errors.push_back({
         "Fim de arquivo inesperado: comentario nao fechado",
         lexeme,
@@ -264,12 +293,19 @@ void Lexer::consumeComment(LexicalResult& result) {
     });
 }
 
+// Reconhece um identificador, palavra reservada ou tipo de variavel (prefixo ~).
+// Apos consumir o lexema inteiro, verifica:
+//   1. Se e uma palavra reservada -> emite o token correspondente.
+//   2. Se esta mal formado (char invalido no meio) -> registra erro.
+//   3. Se excede MAX_IDENTIFIER_LENGTH -> registra erro de tamanho.
+//   4. Caso contrario -> emite token Identificador.
 void Lexer::scanIdentifier(LexicalResult& result) {
     const int startLine = line;
     const int startColumn = column;
     std::string lexeme;
     bool malformed = false;
 
+    // Consome o prefixo '~' se presente (variavel de tipo)
     if (peek() == '~') {
         lexeme += advance();
     }
@@ -332,6 +368,11 @@ void Lexer::scanIdentifier(LexicalResult& result) {
     result.tokens.push_back({"Identificador", lexeme, startLine, startColumn});
 }
 
+// Reconhece um literal inteiro (Num_int).
+// Detecta tres casos de erro:
+//   - Numero seguido de '.' (ponto flutuante nao suportado): "Numero mal formado".
+//   - Numero seguido de letra/char invalido (ex.: 1a): "mal formado: nao pode iniciar com digito".
+//   - Quantidade de digitos excede MAX_NUMBER_DIGITS: "Tamanho excessivo do numero".
 void Lexer::scanNumber(LexicalResult& result) {
     const int startLine = line;
     const int startColumn = column;
@@ -385,6 +426,9 @@ void Lexer::scanNumber(LexicalResult& result) {
     result.tokens.push_back({"Num_int", lexeme, startLine, startColumn});
 }
 
+// Reconhece uma string literal entre aspas duplas (texto).
+// Suporta sequencias de escape (\n, \", etc.). A string nao pode
+// conter quebra de linha — se chegar ao fim da linha sem fechar, registra erro.
 void Lexer::scanString(LexicalResult& result) {
     const int startLine = line;
     const int startColumn = column;
@@ -392,11 +436,13 @@ void Lexer::scanString(LexicalResult& result) {
     bool escaped = false;
     bool closed = false;
 
+    // Consome a aspa dupla de abertura
     lexeme += advance();
 
     while (!isAtEnd()) {
         const char current = peek();
 
+        // Quebra de linha sem fechar a string e um erro lexico
         if (!escaped && (current == '\n' || current == '\r')) {
             break;
         }
@@ -425,6 +471,9 @@ void Lexer::scanString(LexicalResult& result) {
     result.tokens.push_back({"texto", lexeme, startLine, startColumn});
 }
 
+// Trata aspas simples na entrada.
+// GachaScript nao possui o tipo char como terminal valido;
+// qualquer forma de literal com aspas simples sempre gera um erro lexico.
 void Lexer::scanChar(LexicalResult& result) {
     const int startLine = line;
     const int startColumn = column;
@@ -433,6 +482,7 @@ void Lexer::scanChar(LexicalResult& result) {
     bool closed = false;
     int logicalCharacters = 0;
 
+    // Consome a aspa simples de abertura
     lexeme += advance();
 
     while (!isAtEnd()) {
@@ -468,6 +518,9 @@ void Lexer::scanChar(LexicalResult& result) {
     result.errors.push_back({message, lexeme, startLine, startColumn});
 }
 
+// Reconhece simbolos de um ou dois caracteres: operadores aritmeticos (+,-,*,/),
+// relacionais (< > <= >= == !=), atribuicao (=) e delimitadores (; , ( ) { }).
+// Qualquer outro caractere que chegue aqui nao pertence a linguagem e gera erro.
 void Lexer::scanSymbolOrOperator(LexicalResult& result) {
     const int startLine = line;
     const int startColumn = column;
@@ -549,6 +602,8 @@ void Lexer::scanSymbolOrOperator(LexicalResult& result) {
     }
 }
 
+// Converte o valor de um lexema para exibicao: troca caracteres de controle por
+// sequencias de escape (\ n, \r, \t) e trunca em 80 caracteres para evitar saida longa.
 std::string Lexer::printable(const std::string& value) {
     std::ostringstream output;
 
@@ -577,6 +632,11 @@ std::string Lexer::printable(const std::string& value) {
     return output.str();
 }
 
+// ---------------------------------------------------------------------------
+// Utilitarios de I/O
+// ---------------------------------------------------------------------------
+
+// Le o conteudo completo do arquivo em modo binario e retorna como string.
 std::string readTextFile(const std::string& path) {
     std::ifstream input(path, std::ios::binary);
 

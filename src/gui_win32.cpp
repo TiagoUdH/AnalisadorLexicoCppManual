@@ -7,21 +7,27 @@
 
 namespace {
 
-constexpr int ID_EDITOR = 1001;
-constexpr int ID_OUTPUT = 1002;
-constexpr int ID_OPEN = 1003;
-constexpr int ID_ANALYZE = 1004;
-constexpr int ID_SAMPLE = 1005;
-constexpr int ID_CLEAR = 1006;
-constexpr int ID_SAVE = 1007;
+// ---------------------------------------------------------------------------
+// Identificadores dos controles Win32
+// ---------------------------------------------------------------------------
+constexpr int ID_EDITOR  = 1001; // Caixa de texto do codigo-fonte (editavel)
+constexpr int ID_OUTPUT  = 1002; // Caixa de texto da saida (somente leitura)
+constexpr int ID_OPEN    = 1003; // Botao Abrir
+constexpr int ID_ANALYZE = 1004; // Botao Analisar
+constexpr int ID_SAMPLE  = 1005; // Botao Exemplo
+constexpr int ID_CLEAR   = 1006; // Botao Limpar
+constexpr int ID_SAVE    = 1007; // Botao Salvar saida
 
-HWND gEditor = nullptr;
-HWND gOutput = nullptr;
-HWND gStatus = nullptr;
-HWND gEditorLabel = nullptr;
-HWND gOutputLabel = nullptr;
-HFONT gUiFont = nullptr;
-HFONT gMonoFont = nullptr;
+// ---------------------------------------------------------------------------
+// Handles globais dos controles criados em createControls()
+// ---------------------------------------------------------------------------
+HWND gEditor      = nullptr; // Area de edicao do codigo-fonte
+HWND gOutput      = nullptr; // Area de saida dos tokens/erros
+HWND gStatus      = nullptr; // Barra de status na parte inferior
+HWND gEditorLabel = nullptr; // Rotulo acima do editor
+HWND gOutputLabel = nullptr; // Rotulo acima da saida
+HFONT gUiFont     = nullptr; // Fonte proporcional para botoes e rotulos
+HFONT gMonoFont   = nullptr; // Fonte monoespaco para editor e saida
 
 const char* SAMPLE_CODE =
     "Start {\r\n"
@@ -55,6 +61,7 @@ const char* SAMPLE_CODE =
     "@\r\n"
     "/* comentario sem fechamento";
 
+// Converte quebras de linha Unix (\n) para Windows (\r\n) antes de exibir no controle EDIT.
 std::string toWindowsNewlines(const std::string& text) {
     std::string converted;
     converted.reserve(text.size() + 16);
@@ -69,6 +76,7 @@ std::string toWindowsNewlines(const std::string& text) {
     return converted;
 }
 
+// Le o texto atual de um controle EDIT e retorna como std::string.
 std::string getControlText(HWND handle) {
     const int length = GetWindowTextLengthA(handle);
     std::string text(static_cast<std::size_t>(length) + 1, '\0');
@@ -81,21 +89,25 @@ std::string getControlText(HWND handle) {
     return text;
 }
 
+// Define o texto de um controle EDIT, convertendo quebras de linha.
 void setControlText(HWND handle, const std::string& text) {
     const std::string converted = toWindowsNewlines(text);
     SetWindowTextA(handle, converted.c_str());
 }
 
+// Atualiza o texto exibido na barra de status.
 void setStatus(const std::string& text) {
     if (gStatus != nullptr) {
         SetWindowTextA(gStatus, text.c_str());
     }
 }
 
+// Exibe uma caixa de mensagem de erro modal.
 void showError(HWND owner, const std::string& message) {
     MessageBoxA(owner, message.c_str(), "Analisador Lexico", MB_ICONERROR | MB_OK);
 }
 
+// Le o codigo-fonte do editor, executa o analisador lexico e exibe o resultado.
 void analyzeSource(HWND owner) {
     try {
         Lexer lexer(getControlText(gEditor));
@@ -109,6 +121,7 @@ void analyzeSource(HWND owner) {
     }
 }
 
+// Abre um dialogo de selecao de arquivo e carrega o conteudo no editor.
 void openFile(HWND owner) {
     char fileName[MAX_PATH] = "";
     OPENFILENAMEA options = {};
@@ -130,6 +143,7 @@ void openFile(HWND owner) {
     }
 }
 
+// Abre um dialogo de salvar e grava o conteudo da area de saida em arquivo .txt.
 void saveOutput(HWND owner) {
     char fileName[MAX_PATH] = "saida_lexica.txt";
     OPENFILENAMEA options = {};
@@ -152,6 +166,7 @@ void saveOutput(HWND owner) {
     }
 }
 
+// Recalcula posicao e tamanho de todos os controles ao redimensionar a janela.
 void layoutControls(HWND window) {
     RECT area;
     GetClientRect(window, &area);
@@ -190,6 +205,7 @@ void layoutControls(HWND window) {
     MoveWindow(gStatus, margin, height - statusHeight - 4, width - (2 * margin), statusHeight, TRUE);
 }
 
+// Cria todos os controles da janela (botoes, areas de texto, rotulos, fontes).
 void createControls(HWND window, HINSTANCE instance) {
     gUiFont = CreateFontA(-16, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                           OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
@@ -240,6 +256,7 @@ void createControls(HWND window, HINSTANCE instance) {
     setControlText(gEditor, SAMPLE_CODE);
 }
 
+// Procedimento de janela: trata mensagens WM_CREATE, WM_SIZE, WM_COMMAND e WM_DESTROY.
 LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
         case WM_CREATE:
