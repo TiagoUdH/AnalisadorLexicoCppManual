@@ -1,5 +1,8 @@
+#include "ASTNode.h"
 #include "Lexer.h"
+#include "Parser.h"
 
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <windows.h>
@@ -10,11 +13,11 @@ namespace {
 // ---------------------------------------------------------------------------
 // Textos e identidade visual da janela
 // ---------------------------------------------------------------------------
-const char* APP_TITLE = "GachaScript Lexer // Manual C++";
-const char* APP_SUBTITLE = "Scanner manual: Start, Farmar, Drop e 50/50 reconhecidos caractere a caractere.";
-const char* WINDOW_CLASS_NAME = "AnalisadorLexicoManualCppWindow";
-const char* WINDOW_TITLE = "GachaScript Lexer Manual - C++";
-const char* ANALYZE_BUTTON_TEXT = "Farmar tokens";
+const char* APP_TITLE = "GachaScript Parser // Manual C++";
+const char* APP_SUBTITLE = "Analisador lexico e sintatico: Start, Farmar, 50/50, Combo, Seletor e mais.";
+const char* WINDOW_CLASS_NAME = "AnalisadorSintaticoCppWindow";
+const char* WINDOW_TITLE = "GachaScript Parser - C++";
+const char* ANALYZE_BUTTON_TEXT = "Compilar";
 
 // ---------------------------------------------------------------------------
 // Identificadores dos controles Win32
@@ -28,6 +31,7 @@ constexpr int ID_CLEAR    = 1006; // Botao Limpar
 constexpr int ID_SAVE     = 1007; // Botao Salvar saida
 constexpr int ID_TITLE    = 1008; // Titulo da tela
 constexpr int ID_SUBTITLE = 1009; // Subtitulo da tela
+constexpr int ID_EXIT     = 1010; // Botao Sair
 
 // ---------------------------------------------------------------------------
 // Paleta inspirada em uma interface de jogo/gacha: fundo escuro, dourado de
@@ -70,35 +74,29 @@ HBRUSH gStatusBrush = nullptr;
 
 const char* SAMPLE_CODE =
     "Start {\r\n"
-    "    Level ataque = 10;\r\n"
-    "    T4 chance = 50;\r\n"
-    "    T5 dano = 90;\r\n"
-    "    Meta ativo = 1;\r\n"
-    "    Lore nome = \"texto\";\r\n"
-    "    Assinatura fixo = 1;\r\n"
-    "    Anunciar(nome);\r\n"
-    "    Coletar(ataque);\r\n"
-    "    50/50 (ataque >= 10 E ativo == 1) {\r\n"
-    "        Drop ataque;\r\n"
-    "    } Garantido {\r\n"
-    "        Farmar(i = 0; i < 10; i = i + 1) {\r\n"
-    "            Combo(i < 5 OU ataque != 0) {\r\n"
-    "                Seletor(i) {\r\n"
+    "    Level pity = 0;\r\n"
+    "    Level limite = 90;\r\n"
+    "    Meta ganhou_50_50 = 0;\r\n"
+    "\r\n"
+    "    Farmar(pity = 0; pity < limite; pity = pity + 1) {\r\n"
+    "        Anunciar(\"Realizando desejo no banner...\");\r\n"
+    "\r\n"
+    "        50/50 (pity == 89) {\r\n"
+    "            Anunciar(\"Brilhou dourado!\");\r\n"
+    "            Drop;\r\n"
+    "        } Garantido {\r\n"
+    "            Combo(pity < 5 OU pity != 0) {\r\n"
+    "                Seletor(pity) {\r\n"
+    "                    Anunciar(\"Sistema de pity ativo\");\r\n"
     "                    Quebra_Fraqueza;\r\n"
     "                }\r\n"
     "            }\r\n"
     "        }\r\n"
     "    }\r\n"
-    "}\r\n"
-    "j@\r\n"
-    "1a\r\n"
-    "2.a3\r\n"
-    "5555555555555555\r\n"
-    "minha_variavel_para_testar_um_nome_muito_longo = 1\r\n"
-    "texto_ruim = \"hello world\r\n"
-    "char_ruim = 'a\r\n"
-    "@\r\n"
-    "/* comentario sem fechamento";
+    "\r\n"
+    "    Anunciar(\"Total de desejos realizados: \");\r\n"
+    "    Anunciar(pity);\r\n"
+    "}";
 
 void deleteBrush(HBRUSH& brush) {
     if (brush != nullptr) {
@@ -179,20 +177,48 @@ void setStatus(const std::string& text) {
     }
 }
 
-// Exibe uma caixa de mensagem de erro modal.
 void showError(HWND owner, const std::string& message) {
-    MessageBoxA(owner, message.c_str(), "GachaScript Lexer", MB_ICONERROR | MB_OK);
+    MessageBoxA(owner, message.c_str(), "GachaScript Parser", MB_ICONERROR | MB_OK);
 }
 
-// Le o codigo-fonte do editor, executa o analisador lexico e exibe o resultado.
 void analyzeSource(HWND owner) {
     try {
         Lexer lexer(getControlText(gEditor));
         const LexicalResult result = lexer.analyze();
-        setControlText(gOutput, Lexer::formatResult(result));
 
-        setStatus("Drop concluido: " + std::to_string(result.tokens.size()) +
-                  " token(s), " + std::to_string(result.errors.size()) + " erro(s).");
+        std::ostringstream output;
+        output << "=== ANALISE LEXICA ===\n";
+        output << Lexer::formatResult(result);
+
+        if (!result.errors.empty()) {
+            output << "Analise sintatica abortada: existem erros lexicos.\n";
+            setControlText(gOutput, output.str());
+            setStatus("Compilacao abortada: " + std::to_string(result.errors.size()) + " erro(s) lexico(s).");
+            return;
+        }
+
+        output << "\n=== ANALISE SINTATICA ===\n";
+
+        try {
+            Parser parser(result.tokens);
+            auto ast = parser.analisar();
+            output << "Compilacao bem-sucedida! Nenhum erro sintatico encontrado.\n";
+            output << "\n=== ARVORE SINTATICA (AST) ===\n";
+            output << formatAST(*ast);
+            setStatus("Compilacao bem-sucedida! " + std::to_string(result.tokens.size()) + " token(s), 0 erros.");
+        } catch (const SyntaxError& error) {
+            output << "=== ERRO SINTATICO ===\n";
+            output << "Linha " << error.getLine()
+                   << ", Coluna " << error.getColumn()
+                   << " - " << error.what() << "\n";
+            output << "\nDica: Verifique a gramatica da linguagem. ";
+            output << "Erros comuns incluem: ';' faltando, parenteses/chaves nao fechados, ";
+            output << "expressao incompleta ou comando fora de ordem.\n";
+            setStatus("Erro sintatico na linha " + std::to_string(error.getLine()) +
+                      ", coluna " + std::to_string(error.getColumn()));
+        }
+
+        setControlText(gOutput, output.str());
     } catch (const std::exception& exception) {
         showError(owner, exception.what());
     }
@@ -330,6 +356,8 @@ void layoutControls(HWND window) {
     MoveWindow(GetDlgItem(window, ID_CLEAR), buttonLeft, toolbarTop, 92, buttonHeight, TRUE);
     buttonLeft += 100;
     MoveWindow(GetDlgItem(window, ID_SAVE), buttonLeft, toolbarTop, 122, buttonHeight, TRUE);
+    buttonLeft += 130;
+    MoveWindow(GetDlgItem(window, ID_EXIT), buttonLeft, toolbarTop, 72, buttonHeight, TRUE);
 
     const int labelsTop = toolbarTop + toolbarHeight + 12;
     const int contentTop = labelsTop + labelHeight;
@@ -376,6 +404,8 @@ void createControls(HWND window, HINSTANCE instance) {
                     0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_CLEAR), instance, nullptr);
     CreateWindowExA(0, "BUTTON", "Salvar drop", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
                     0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_SAVE), instance, nullptr);
+    CreateWindowExA(0, "BUTTON", "Sair", WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+                    0, 0, 0, 0, window, reinterpret_cast<HMENU>(ID_EXIT), instance, nullptr);
 
     gEditorLabel = CreateWindowExA(0, "STATIC", "Script .gs", WS_CHILD | WS_VISIBLE,
                                    0, 0, 0, 0, window, nullptr, instance, nullptr);
@@ -405,7 +435,7 @@ void createControls(HWND window, HINSTANCE instance) {
     SendMessageA(gEditor, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
     SendMessageA(gOutput, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELPARAM(10, 10));
 
-    for (int id : {ID_OPEN, ID_ANALYZE, ID_SAMPLE, ID_CLEAR, ID_SAVE}) {
+    for (int id : {ID_OPEN, ID_ANALYZE, ID_SAMPLE, ID_CLEAR, ID_SAVE, ID_EXIT}) {
         SendMessageA(GetDlgItem(window, id), WM_SETFONT, reinterpret_cast<WPARAM>(gUiFont), TRUE);
     }
 
@@ -510,6 +540,9 @@ LRESULT CALLBACK windowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
                     return 0;
                 case ID_SAVE:
                     saveOutput(window);
+                    return 0;
+                case ID_EXIT:
+                    DestroyWindow(window);
                     return 0;
                 default:
                     break;

@@ -1,0 +1,191 @@
+================================================================================
+           ANALISADOR SINTATICO GACHASCRIPT - DOCUMENTACAO
+================================================================================
+
+1. IDE UTILIZADA
+   - Visual Studio Code com CMake Tools
+   - Compilador: GCC 14.2.0 (MinGW via CodeBlocks)
+   - Gerador de build: MinGW Makefiles + CMake 3.15+
+
+2. COMO RODAR O PROJETO
+
+   a) Compilar:
+      cmake -S . -B build -G "MinGW Makefiles"
+      cmake --build build
+
+   b) Executar (linha de comando):
+      .\build\analisador_sintatico_cli.exe exemplos\exemplo_valido.gs
+
+   c) Executar (interface grafica):
+      .\build\analisador_gui.exe
+
+   A interface grafica possui os seguintes botoes:
+   - Abrir .gs      : carrega um arquivo fonte GachaScript
+   - Compilar       : executa analise lexica + sintatica + exibe AST
+   - Carregar demo  : carrega o codigo de exemplo valido
+   - Limpar         : limpa o editor e a saida
+   - Salvar drop    : salva o resultado da analise em arquivo .txt
+   - Sair           : fecha o programa
+
+3. REGRAS SINTATICAS (GRAMATICA LL(1))
+
+   A gramatica de GachaScript foi definida para ser analisada por um parser
+   recursivo-descendente. Abaixo a gramatica completa na notacao BNF:
+
+   Programa        -> Start Bloco
+
+   Bloco           -> abre_chave Cmds fecha_chave
+
+   Cmds            -> Cmd Cmds | e
+
+   Cmd             -> Declaracao
+                    | Atribuicao
+                    | Condicional
+                    | RepeticaoFarmar
+                    | RepeticaoCombo
+                    | SelecaoSeletor
+                    | QuebraFraquezaCmd
+                    | DropCmd
+                    | PrintCmd
+                    | ColetarCmd
+                    | Bloco
+
+   Declaracao      -> Tipo_Var Identificador RestoDecl
+   RestoDecl       -> atrib Expressao ponto_virgula     (com inicializacao)
+                    | ponto_virgula                       (sem inicializacao)
+
+   Atribuicao      -> Identificador atrib Expressao ponto_virgula
+
+   Condicional     -> Cond_if abre_par Expressao fecha_par Cmd RestoElse
+   RestoElse       -> Cond_else Cmd | e
+
+   RepeticaoFarmar -> Farmar abre_par ParteRep ponto_virgula Expressao
+                        ponto_virgula AtribRep fecha_par Cmd
+
+   ParteRep        -> Tipo_Var Identificador atrib Expressao
+                    | Identificador atrib Expressao
+                    | e
+
+   AtribRep        -> Identificador atrib Expressao | e
+
+   RepeticaoCombo  -> Combo abre_par Expressao fecha_par Cmd
+
+   SelecaoSeletor  -> Seletor abre_par Expressao fecha_par Cmd
+
+   QuebraFraquezaCmd -> Quebra_Fraqueza ponto_virgula
+
+   DropCmd         -> Drop Expressao ponto_virgula | Drop ponto_virgula
+
+   PrintCmd        -> Anunciar abre_par ListaParams fecha_par ponto_virgula
+                    | Anunciar abre_par fecha_par ponto_virgula
+
+   ListaParams     -> Expressao RestoParams
+   RestoParams     -> virgula Expressao RestoParams | e
+
+   ColetarCmd      -> Coletar abre_par Identificador fecha_par ponto_virgula
+
+   Expressao       -> TermoLogico RestoExpr
+   RestoExpr       -> op_log TermoLogico RestoExpr | e
+
+   TermoLogico     -> ExprAritmetica RestoTermo
+   RestoTermo      -> op_rel ExprAritmetica | e
+
+   ExprAritmetica  -> Termo RestoArit
+   RestoArit       -> op_mat(+|-) Termo RestoArit | e
+
+   Termo           -> Fator RestoTermoMul
+   RestoTermoMul   -> op_mat(*|/) Fator RestoTermoMul | e
+
+   Fator           -> Num_int | texto | Identificador
+                    | abre_par Expressao fecha_par
+
+   Precedencia de operadores (da menor para maior):
+   - op_log (E, OU): menor precedencia
+   - op_rel (<, >, <=, >=, ==, !=)
+   - op_mat +, -
+   - op_mat *, /   : maior precedencia
+
+4. PRINCIPAIS ERROS SINTAITICOS TRATADOS
+
+   4.1 Parenteses/Chaves abertos e nao fechados
+       - O parser detecta quando falta fecha_par ou fecha_chave.
+       - Mensagem: "Fechamento de parenteses ')' esperado. Verifique se
+         todos os parenteses estao fechados"
+       - Mensagem: "Fechamento de bloco '}' esperado. Verifique se todas
+         as chaves foram fechadas corretamente"
+
+   4.2 Sequencia de comandos fora de ordem
+       - O parser identifica quando um comando nao pertence ao contexto.
+       - Exemplo: colocar 'Drop' dentro de uma declaracao.
+       - Mensagem: "Comando inesperado: <tipo> (<lexema>). Verifique a
+         sintaxe da instrucao nesta posicao"
+
+   4.3 Comando ou expressao incompleta
+       - Declaracoes sem ';' geram: "';' apos a declaracao. Declaracao
+         incompleta"
+       - Atribuicoes sem ';' geram: "';' apos a atribuicao. Comando de
+         atribuicao incompleto"
+       - Expressoes vazias (ex.: Level x = ;) geram: "Expressao esperada,
+         encontrado ponto_virgula"
+       - Fim de arquivo durante um comando: "<token> esperado(a), mas o
+         programa terminou inesperadamente"
+
+   4.4 Uso incorreto de operadores ou palavras-chave
+       - '=' sem identificador antes: "Identificador no lado esquerdo da
+         atribuicao"
+       - 'Farmar' sem '(' apos: "Abertura de parenteses '(' apos 'Farmar'"
+       - '50/50' sem condicao: "Abertura de parenteses '(' apos '50/50'"
+       - Palavra onde se espera expressao: "Expressao esperada, encontrado
+         <tipo>"
+
+   4.5 Token extra apos o fim do programa
+       - Se houver tokens apos o fechamento do bloco principal:
+         "Token inesperado apos o fim do programa"
+
+   4.6 Erros lexicos (detectados antes da analise sintatica)
+       - Identificadores/variaveis mal formados (ex.: j@, 1a)
+       - Numeros mal formados (ex.: 2.a3)
+       - Tamanho excessivo de identificadores (>30) ou numeros (>15 digitos)
+       - Strings nao fechadas
+       - Simbolos nao pertencentes a linguagem (ex.: @)
+       - Comentarios de bloco nao fechados
+
+5. ESTRUTURA DO PROJETO
+
+   AnalisadorLexicoCppManual/
+   |-- CMakeLists.txt
+   |-- exemplos/
+   |   |-- exemplo.gs              (com erros lexicos propositais)
+   |   |-- exemplo_valido.gs       (programa valido de teste)
+   |   |-- exemplo_invalido.gs     (com erros sintaticos propositais)
+   |-- src/
+   |   |-- ASTNode.h               (estrutura da arvore sintatica)
+   |   |-- Lexer.h                 (token, erro lexico, classe Lexer)
+   |   |-- Lexer.cpp               (analisador lexico manual)
+   |   |-- Parser.h                (classe Parser e SyntaxError)
+   |   |-- Parser.cpp              (parser recursivo-descendente + AST)
+   |   |-- main_cli.cpp            (entrada via terminal)
+   |   |-- gui_win32.cpp           (interface grafica Win32)
+
+6. ARVORE SINTATICA (AST)
+
+   O parser constroi uma arvore sintatica abstrata durante a analise.
+   Cada no contem:
+   - type  : tipo do no (ex.: Programa, Bloco, Declaracao, Expressao...)
+   - value : valor associado (ex.: nome da variavel, valor do numero)
+   - line/column : posicao no codigo-fonte
+   - children : lista de nos filhos
+
+   A arvore e exibida na saida apos a analise bem-sucedida, com
+   indentacao hierarquica mostrando a estrutura do programa.
+
+7. IMPLEMENTACAO DO PARSER
+
+   - Parser recursivo-descendente (top-down)
+   - Cada regra da gramatica corresponde a um metodo da classe Parser
+   - Uso de lookahead de 1 token (LL(1))
+   - Constroi a AST incrementalmente durante o parsing
+   - Erros sao reportados com linha, coluna e mensagem descritiva
+   - O parser consome os tokens validos do analisador lexico
+   - Se houver erros lexicos, a analise sintatica e abortada
+================================================================================
